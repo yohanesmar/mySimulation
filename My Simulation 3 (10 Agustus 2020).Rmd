@@ -1,0 +1,188 @@
+---
+title: "diabetes"
+author: "Chemy"
+date: "8/10/2020"
+output: html_document
+---
+
+```{r import file}
+library(readr)
+dabetes <- read_csv("C:/Users/user/Desktop/Belajar/Dataset/diabetes.csv")
+
+col.names=c("Pregnant","Plasma_Glucose","Dias_BP","Triceps_Skin","Serum_Insulin","BMI","DPF","Age","Diabetes")
+colnames(dabetes)<- col.names
+
+dabetes$Diabetes <- as.factor(dabetes$Diabetes)
+str(dabetes)
+```
+
+
+```{r sampling train test}
+set.seed(100)
+sampling <- sample(nrow(dabetes),0.7*nrow(dabetes))
+training <- dabetes[sampling,]
+test <- dabetes[-sampling,]
+```
+
+
+```{r tes pakai logistic regresiom}
+model.glm <- glm(Diabetes~., data = training, family = "binomial" )
+predicting.glm <- predict(model.glm, test, type = "response")  # output range 0-1
+predict.glm <- round(predicting.glm)
+
+predict.glm <- as.factor(predict.glm)
+test$Diabetes <- as.factor(test$Diabetes)
+
+
+library(caret)
+confusionMatrix(predict.glm, test$Diabetes )
+```
+
+
+```{r multinomial}
+library(nnet)
+model.multinom <- nnet::multinom(Diabetes~.,data = training)
+predict.multinom  <- predict(model.multinom, test)
+
+test$Diabetes <- as.factor(test$Diabetes)
+
+library(caret)
+confusionMatrix(predict.multinom, test$Diabetes)
+acc.multinom <- confusionMatrix(predict.multinom, test$Diabetes)$overall["Accuracy"]
+```
+
+
+```{r decisiontree}
+library(rpart)
+model.classtree <- rpart(Diabetes~.,data = training, method = "class")
+
+library(rpart.plot)
+rpart.plot(model.classtree, tweak = 1.8)
+plotcp(model.classtree)
+pruning <- prune(model.classtree,cp = 0.041)
+rpart.plot(pruning)
+
+predict.classtree  <- predict(pruning, test, type = "class")
+#predict.classtree <- as.factor(ifelse(predict.classtree > 0.5, 1,0))
+
+test$Diabetes <- as.factor(test$Diabetes)
+
+library(caret)
+confusionMatrix(predict.classtree, test$Diabetes)
+acc.classtree <- confusionMatrix(predict.classtree, test$Diabetes)$overall["Accuracy"]
+
+"dalam case ini entah kenapa cp yang rendah tidak improve accuracy, justru 12 leaves lebih bagus"
+```
+
+```{r randomforest}
+library(randomForest)
+model.randforest <- randomForest(Diabetes~.,data = training, type = classification, maxnodes = 10, ntree = 1000)
+model.randforest
+
+predict.randforest <- predict(model.randforest,test)
+
+library(caret)
+confusionMatrix(as.factor(predict.round),as.factor(test$Diabetes))
+acc.randforest <- confusionMatrix(predict.randforest, test$Diabetes)$overall["Accuracy"]
+
+```
+
+```{r svm}
+library(e1071)
+model.svm <- svm(Diabetes~.,data = training, type = "C-classification", kernel = "radial")
+model.svm
+predict.svm <- predict(model.svm,test)
+
+confusionMatrix(predict.svm, test$Diabetes)
+acc.svm <- confusionMatrix(predict.svm, test$Diabetes)$overall["Accuracy"]
+```
+
+```{r KNN}
+str(dabetes)
+dabetes$Diabetes <- as.numeric(dabetes$Diabetes)-1
+
+norm <- function(x) { (x-min(x)) / (max(x)-min(x)) }
+normal <- lapply(dabetes, norm)
+normalized <- as.data.frame(normal)
+
+set.seed(69)
+train.num <- normalized[sampling,]
+test.num <- normalized[-sampling,]
+target <- training$Diabetes
+
+library(class)
+result.knn <- knn(train.num, test.num, cl = target, k = 10) 
+
+test$Diabetes <- as.factor(test$Diabetes)
+
+library(caret)
+confusionMatrix(result$result.knn,test$Diabetes)
+```
+
+
+```{r Neural Network}
+str(dabetes)
+dabetes$Diabetes <- as.numeric(dabetes$Diabetes)-1
+
+# yang di atas jangan di run lg biar gak -1 terus
+dabetes4nn <- dabetes
+norm <- function(x) { (x-min(x)) / (max(x)-min(x)) }
+normal <- lapply(dabetes4nn, norm)
+normalized <- as.data.frame(normal)
+
+train.num <- normalized[sampling,]
+test.num <- normalized[-sampling,]
+
+library(neuralnet)
+model.nn <- neuralnet(Diabetes~., data = train.num, hidden = c(6), linear.output = FALSE, act.fct = "logistic", stepmax = 1000000) 
+plot(model.nn)
+
+predict.nn <- predict(model.nn,test.num)
+predicting.nn <- predict.nn*(max(dabetes4nn$Diabetes)-min(dabetes4nn$Diabetes))+min(dabetes4nn$Diabetes) # dikembalikan ke nilai normal
+result.nn <- round(predicting.nn)
+
+library(caret)
+confusionMatrix(as.factor(result.nn), as.factor(test.num$Diabetes))
+```
+
+
+```{r gradient boost}
+library(caret)
+ls("package:caret")
+```
+
+
+```{r plotting with ggplot2}
+library(ggplot2)
+
+comparison <- data.frame(c(acc.classtree,acc.multinom,acc.randforest,acc.svm))
+colnames(comparison)[1] <- "Akurasi"
+comparison <- data.frame(Model=c("Class Tree","Multinom","Random Forest","SVM"),comparison)
+
+ggplot(comparison,aes(x=Model,y=Akurasi)) + geom_bar(stat = 'identity') + theme_bw() + ggtitle("Comparison of model Accuracy")
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,94 @@
+---
+title: "Untitled2"
+author: "Chemy"
+date: "10/3/2020"
+output: html_document
+---
+
+
+```{r}
+library(haven)
+hsbdemo <- read.csv("C:/Users/user/Desktop/Belajar/R/my_datasets/hsbdemo.csv")
+
+set.seed(123)
+sample <- sample(nrow(hsbdemo), 0.8*nrow(hsbdemo))
+train <- hsbdemo[sample,]
+test <- hsbdemo[-sample,]
+```
+
+```{r}
+library(e1071)
+model.nb <- naiveBayes(prog~.-id-X, data = train, laplace = 3)
+prediction <- predict(model.nb, test)
+
+library(caret)
+confusionMatrix(test$prog, prediction)
+table(test$prog, prediction)
+mean(test$prog == prediction) #accuracy
+
+```
+
+
+```{r create hypergrid}
+
+hyper_grid <- expand.grid(
+  laplace = c(1:10),
+  threshold =c(1,2,5),
+  accuracy = 0)              # a place to dump results      
+
+# total number of combinations
+nrow(hyper_grid)
+
+```
+
+```{r cara tes multiple kombinasi hyperparameter}
+# grid search 
+for(i in nrow(hyper_grid)) {
+  
+# train model
+model2 <- naiveBayes(prog~.-id-X, data = train, laplace = hyper_grid$laplace[i], threshold = hyper_grid$threshold)
+predValid <- predict(model2, test)
+  
+# accuracy
+hyper_grid$accuracy[i] <- mean(test$prog == predValid)
+}
+
+library(dplyr)
+hyper_grid %>% dplyr::arrange(desc(accuracy)) %>% head(10)
+```
+
+================================================================================================================================================
+
+```{r gbm with caret}
+gbm_grid = expand.grid(interaction.depth = c(1:10),
+                       n.trees = (1:10) * 100,
+                       shrinkage = c(0.1, 0.01, 0.001),
+                       n.minobsinnode = c(1:5))
+
+
+library(caret)
+ctrl <- trainControl(method = "repeatedcv", number = 2)
+model.gbm <- train(prog~.-id-X, data = train, trControl = ctrl, method = "gbm", tuneGrid = gbm_grid)
+pred <- predict(model.gbm, test)
+confusionMatrix(pred, test$prog)
+
+## cari model dengan akurasi terbaik
+model.gbm$bestTune
+
+## create model ulang berdasarkan tune parameter terbaik
+gbm_grid2 = expand.grid(interaction.depth = 2,
+                       n.trees = 100,
+                       shrinkage =0.01,
+                       n.minobsinnode = 5)
+
+model.gbm2 <- train(prog~.-id-X, data = train, trControl = ctrl, method = "gbm", tuneGrid = gbm_grid2)
+pred2 <- predict(model.gbm2, test)
+
+confusionMatrix(pred2, test$prog)
+
+```
+
+
+
+
+

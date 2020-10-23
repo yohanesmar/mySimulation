@@ -1,0 +1,96 @@
+---
+title: "classification tree"
+author: "Chemy"
+date: "7/26/2020"
+output: html_document
+---
+
+```{r}
+library(haven)
+hsbdemo <- read_dta("C:/Users/user/Desktop/Belajar/R/hsbdemo.dta")
+View(hsbdemo)
+
+```
+
+====================================================================================================================================
+
+
+```{r change type for neural network only}
+dataprog$female <- as.numeric(dataprog$female)
+dataprog$ses<- as.numeric(dataprog$ses)
+dataprog$schtyp <- as.numeric(dataprog$schtyp)
+dataprog$honors<- as.numeric(dataprog$honors)
+dataprog$prog <- as.numeric(dataprog$prog)
+#str(dataprog)
+
+```
+
+```{r normalization min-max for NN}
+maxs <- apply(dataprog,2, max) 
+mins <- apply(dataprog,2, min)
+maxs
+mins
+scaled <- as.data.frame(scale(dataprog, center = mins, scale = maxs - mins))
+dim(scaled)
+```
+
+
+
+```{r modeling and prediction neuralnetwork}
+library(neuralnet)
+modelprog<-neuralnet(prog~.-id,data=scaled,hidden=c(8,5),linear.output = F)
+plot(modelprog)
+prediction <- predict(modelprog,scaled)
+```
+
+```{r unscaling}
+prediction_ <- prediction*(max(dataprog$prog)-min(dataprog$prog))+min(dataprog$prog)							
+#test.unscale <- (scaled$prog)*(max(scaled$prog)-min(scaled$prog))+min(scaled$prog)	
+predictNN<-round(as.data.frame(prediction_))
+#as.data.frame(test.unscale)
+colnames(predictNN)[1]<-"progNN"
+table(dataprog$prog,predictNN$progNN)
+"pake hidden layer 8 dan 5"
+(43+104+41)/200 
+"ANJEEENG MANTEP"
+
+#prediction <- round(prediction)
+
+```
+
+====================================================================================================================================
+
+```{r pake multinom}
+library(nnet)
+modelprog2<-multinom (prog~.-id,data=dataprog)
+prediction2 <- predict(modelprog2,dataprog)
+table(dataprog$prog,prediction2)
+(11+89+30)/200
+
+```
+
+====================================================================================================================================
+
+
+```{r pake classification tree}
+library(rpart)
+library(rpart.plot)
+modelprog3<-rpart(prog~.-id,data=dataprog,method = "class")
+plotcp(modelprog3)
+rpart.plot(modelprog3,cex = 0.5)
+
+##pruning
+prune.modelprog3 <- prune(modelprog3,0.024)
+rpart.plot(prune.modelprog3,cex = 0.5)
+
+
+prediction3 <- predict(prune.modelprog3,dataprog,type = "class")
+table(dataprog$prog,prediction3)
+(20+93+27)/200
+
+```
+
+
+
+```
+

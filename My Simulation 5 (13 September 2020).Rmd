@@ -1,0 +1,235 @@
+---
+title: "My Simulation 5 (12 Sept 2020)"
+author: "Chemy"
+date: "9/12/2020"
+output: html_document
+---
+
+```{r read file}
+mushroom <- read.csv("C:/Users/user/Desktop/Belajar/R/my_datasets/agaricus-lepiota.data", header=FALSE)
+```
+
+```{r rapihin}
+colnames(mushroom)
+colnames(mushroom) <- c("class","mushroom", "cap.surface","cap.color","bruises","odor","gill.attachment", "gill.spacing", "gill.size","gill.color","stalk.shape","stalk.root"           ,"stalk.surface.above.ring", "stalk.surface.below.ring", "stalk.color.above.ring","stalk.color.below.ring", "veil.type","veil.color"        ,"ring.number", "ring.type", "spore.print.color","population","habitat" )
+
+str(mushroom)
+mushroom$class <- as.character(mushroom$class)
+mushroom$class[mushroom$class == "e"] <- "edible"
+mushroom$class[mushroom$class == "p"] <- "poisonous"
+
+mushroom$class <- as.factor(mushroom$class)
+mushroom
+```
+
+
+```{r cek apakah ada blank, tanda tanya dan NA}
+
+summary(mushroom)
+# NA biasa berada paling bawah, untuk "?" berada paling atas (apabila factor)
+
+library(dplyr)
+mushroom <- mushroom %>% mutate_all(na_if," ")
+mushroom <- mushroom %>% mutate_all(na_if,"?")
+colSums(is.na(mushroom))
+
+# mushroom %>% summarise_all(~sum(as.integer(is.na(.))))
+
+# impute pakai missforest
+library(missForest)
+mf <- missForest(mushroom,ntree = 500, mtry = 3)
+mf <- mf$ximp
+
+str(mf) #masuh ada 5 level termasuk "?"
+mf$stalk.root <- droplevels(mf$stalk.root)
+
+mushroom <- mf
+summary(mushroom)
+rm(mf)
+mushroom <- na.omit(mushroom)
+```
+
+```{r feature selection}
+library(Boruta)
+boruta <- Boruta(class~., mushroom)
+print(boruta)
+plot(boruta)
+```
+
+
+```{r split}
+mushroom <- mushroom[-c(17)]  #kolom yang berisi variabel 1 factor harus di exclude
+colnames(mushroom)
+
+set.seed(69)
+sample <- sample(nrow(mushroom), 0.8* nrow(mushroom))
+training <- mushroom[sample,]
+testing <- mushroom[-sample,]
+```
+
+= contoh ML yang gak ribet : > Multinom
+=                            > Random forest
+=                            > Naive bayes (lib e1071) *note = variabel target harus berupa factor, tidak bisa numeric
+=                            > SVM (lib e1071)
+
+= contoh ML yang ribet : > Ordinal ( harus set order dengan command : df$subset <- factor(df$subset, levels=c(x,y,z), ordered = TRUE))
+=                        > Classification Tree ( ada plotcp dan prune)
+=                        > KNN ( need normalisasi, ada cl atau class target, model dan predict jd 1)
+=                        > Neural Network (need normalisasi)
+
+```{r multinom}
+mushroom <- mushroom[-c(17)]  #kolom yang berisi variabel 1 factor harus di exclude
+colnames(mushroom)
+
+library(nnet)
+model1 <- multinom(class~., training)
+predict1 <- predict(model1,testing)
+
+library(caret)
+confusionMatrix(predict1, testing$class)
+
+```
+
+```{r randomforest}
+library(randomForest)
+model2 <- randomForest(class~., training, mtry = 3, ntree = 500)
+predict2 <- predict(model2,testing)
+
+library(caret)
+confusionMatrix(predict2, testing$class)
+
+```
+
+```{r naivebayes}
+library(e1071)
+model3 <- naiveBayes(class~., training, laplace = 1)
+predict3 <- predict(model3,testing)
+
+library(caret)
+confusionMatrix(predict3, testing$class)
+```
+
+```{r svm}
+library(e1071)
+model4 <- svm(class~., training, type = "C-classification", kernel = "rad")
+predict4 <- predict(model4,testing)
+
+library(caret)
+confusionMatrix(predict3, testing$class)
+```
+
+
+```{r classification tree}
+library(rpart)
+library(rpart.plot)
+
+model5 <- rpart(class~.,training, method = "class")
+ls("package:rpart.plot")
+ls("package:rpart")
+plotcp(model5)
+
+pruned <- prune(model5, cp = 0.013)
+rpart.plot(pruned)
+
+predict5 <- predict(pruned,testing, type = "class")
+
+confusionMatrix(predict5, testing$class)
+```
+
+
+```{r knn}
+library(class)
+ls("package:class")
+
+colnames(training)
+mushroom2 <- mushroom
+mushroom2[, c(1:21)] <- sapply(mushroom2[, c(1:21)], as.numeric) #rubah semua kolom jadi numeric
+
+norm <- function(x) {(x-min(x))/(max(x)-min(x))}
+normal <- lapply(mushroom2, norm)
+normalized <- as.data.frame(normal)
+
+training2 <- normalized[sample,]
+test2 <- normalized[-sample,]
+clnya <- training2$class
+
+model6 <- knn(training2, test2, cl = clnya, k=3)
+model6 <- as.data.frame(model6)
+
+colnames(model6)[1] <- "class"
+model6$class <- as.character(model6$class)
+model6$class[model6$class == 0] <- "edible"
+model6$class[model6$class == 1] <- "poisonous"
+model6$class <- as.factor(model6$class)
+
+confusionMatrix(model6$class, testing$class)
+```
+
+
+```{r cnn}
+library(neuralnet)
+ls("package:neuralnet")
+
+colnames(training)
+mushroom2 <- mushroom
+mushroom2[, c(1:21)] <- sapply(mushroom2[, c(1:21)], as.numeric) #rubah semua kolom jadi numeric
+
+norm <- function(x) {(x-min(x))/(max(x)-min(x))}
+normal <- lapply(mushroom2, norm)
+normalized <- as.data.frame(normal)
+
+training3 <- normalized[sample,]
+test3 <- normalized[-sample,]
+
+model7 <- neuralnet(class~., training3, act.fct = "logistic", linear.output = FALSE, hidden = c(15,10,5))
+plot(model7)
+
+predict7 <- predict(model7, test3)
+
+predict7 <- predict7 * (max(mushroom2$class)-min(mushroom2$class)) + min(mushroom2$class)
+predict7 <- round(predict7)
+predict7 <- as.data.frame(predict7)
+colnames(predict7)[1] <- "class"
+
+predict7$class <- as.character(predict7$class)
+predict7$class[predict7$class == 1] <- "edible"
+predict7$class[predict7$class == 2] <- "poisonous"
+
+predict7$class <- as.factor(predict7$class)
+
+confusionMatrix(predict7$class, testing$class)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

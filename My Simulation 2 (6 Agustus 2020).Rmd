@@ -1,0 +1,344 @@
+---
+title: "review classification"
+author: "Chemy"
+date: "8/6/2020"
+output: html_document
+---
+
+```{r ngambil file nya dulu dari internet, lalu save jadi csv, kemudian dipanggil lg biar mantep wkwk}
+library(haven)
+data <- read.csv("https://stats.idre.ucla.edu/stat/data/hsbdemo.csv", header = TRUE)
+write.csv(data,"C:/Users/user/Desktop/Belajar/R/hsbdemo.csv")
+hsbdemo <- read.csv("hsbdemo.csv")
+
+hsbdemoblankses <- read.csv("hsbdemoblankses.csv")
+hsbdemo
+
+colnames(hsbdemo)[1]<- "Nomor"  #untuk ganti nama kolom 1 dari X menjadi "Nomor"
+hsbdemo <- hsbdemo[-c(1)] #untuk buang kolom nomor 1 karena gak penting
+
+library(Boruta)
+boruta <- Boruta(prog~.-id-female-honors-science-ses, data = hsbdemo)
+boruta
+plot(boruta)
+```
+
+
+TESTING FEATURE SELECTION USING BOTURA :
+
+```{r tes feature selection}
+library(Boruta)
+boruta <- Boruta(prog~., data = hsbdemo)
+print(boruta)
+plot(boruta)
+
+colnames(hsbdemo)
+hsbdemoboruta <- hsbdemo[-c(1,10,8,2)]
+```
+
+```{r split data menjadi training dan test}
+set.seed(69)
+sampling <- sample(1:nrow(hsbdemo), 0.8*nrow(hsbdemo)) #dicut menjadi 80% dan 20% data
+training <- hsbdemo[sampling,]
+test <- hsbdemo[-sampling,]
+
+
+## bikin sample untuk uji teknik feature selection using Botura
+training.b <- hsbdemoboruta[sampling,]
+test.b <- hsbdemo[-sampling,]
+```
+
+
+
+TESTING IMPUTE DATA :
+
+
+```{r testing random forest impute, optional cuma buat latihan impute data HEHEHEHEHE}
+hsbdemoblankses <- read.csv("hsbdemoblankses.csv") #data hsbdemo yang sudah di kosongkan bbrp cell SES
+
+hsbdemoblankses[hsbdemoblankses == "?"] <- NA #rubah data "?" menjadi NA
+hsbdemoblankses[hsbdemoblankses == " "] <- NA #rubah data blank menjadi NA       
+hsbdemoblankses <- hsbdemoblankses[-c(1)]     #delete kolom 1 karena tidak penting
+
+hsbdemoblankses$ses <-droplevels(hsbdemoblankses$ses) # di drop level dulu karena ses masih terbaca 5 level (blank dan ? masih dihitung)
+str(hsbdemoblankses)
+
+#"************ CARA 1 *****************"
+#library(randomForest)
+#hsbdemoblankses <- rfImpute(prog~.-id-cid, data = hsbdemoblankses,ntree = 500, iter = 5)  # variabel respon harus tidak ada NA, sisanya boleh ada NA
+
+#"************ CARA 2 *****************"
+#hsbdemoblankses <- na.roughfix(hsbdemoblankses)
+
+
+"************ CARA 3 *****************"
+library(missForest)
+ls("package:missForest")
+hsbdemoblankses <- missForest(hsbdemoblankses,ntree = 500, maxiter = 10, mtry = 3)
+hsbdemoblankses <- hsbdemoblankses$ximp
+hsbdemoblankses$ses <-droplevels(hsbdemoblankses$ses)
+
+table(hsbdemoblankses$ses,hsbdemo$ses) # Akurasi terbaik didapat di cara ke 3 yaitu menggunakan missForest!
+```
+
+
+>> USING ALGORITMA MULTINOM <<
+
+```{r tes classification gunakan multinom}
+library(nnet)
+model.multinom <- multinom(prog~.-id, data=training)
+predict.multinom <- predict(model.multinom, test)
+
+hasilmultinom <- cbind(test,predict.multinom)  #gabungkan kolom
+colnames(hasilmultinom)
+colnames(hasilmultinom)[14] <- "predict.prog"  #rubah nama kolom ke 14 menjadi predictprog
+
+library(caret)
+confusionMatrix(hasilmultinom$predict.prog,test$prog)
+str(hasilmultinom)
+"akurasi multinom yaitu 55%"
+
+
+
+##### tes feature selection boruta
+model.multinomb <- multinom(prog~., data=training.b)
+predict.multinomb <- predict(model.multinomb, test.b)
+confusionMatrix(predict.multinomb,test.b$prog)
+
+"akurasi multinom boruta yaitu 55%"
+
+```
+
+==========================================================================================================================================================
+
+>> USING ALGORITMA CLASSIFICATION TREE <<
+
+```{r tes classification gunakan classification tree}
+library(rpart)
+model.classtree <- rpart(prog~.-id,data = training, method = "class")
+library(rpart.plot)
+rpart.plot(model.classtree,cex = 0.5)
+plotcp(model.classtree) #minimum cp di 0.055, maka
+
+pruned <- prune(model.classtree,0.045)
+
+predict.classtree <- predict(pruned,test, type = "class")
+hasilclasstree <- cbind(test,predict.classtree)
+colnames(hasilclasstree)
+colnames(hasilclasstree)[14] <- "predict.prog"
+
+library(caret)
+confusionMatrix(hasilclasstree$predict.prog,hasilclasstree$prog)
+"akurasi classification tree before prune yaitu 42.5%"
+"akurasi classification tree after prune yaitu 52.5%" #ada improvement
+```
+
+
+==========================================================================================================================================================
+
+>> USING ALGORITMA RANDOMFOREST <<
+
+```{r tes classification gunakan randomforest}
+library(randomForest)
+model.randomforest <- randomForest(prog~.-id, data = training, ntree = 1000,mtry = 3, Proximity = TRUE)
+plot(model.randomforest)
+
+predict.randomforest <- predict(model.randomforest,test)
+hasilrandomforest <- cbind(test,predict.randomforest)
+colnames(hasilrandomforest)
+colnames(hasilrandomforest)[14] <- "predict.prog"
+
+confusionMatrix(hasilrandomforest$predict.prog,hasilrandomforest$prog)
+
+"akurasi random forest yaitu 52.5%"
+
+```
+
+==========================================================================================================================================================
+
+>> USING ALGORITMA Naive Bayes <<
+
+```{r tes classification gunakan naivebayes}
+library(e1071)
+model.naivebayes <- naiveBayes(prog~.-id, data = training, laplace =2)
+
+predict.naivebayes <- predict(model.naivebayes,test)
+hasilnaivebayes <- cbind(test,predict.naivebayes)
+colnames(hasilnaivebayes)
+colnames(hasilnaivebayes)[14] <- "predict.prog"
+
+confusionMatrix(hasilnaivebayes$predict.prog,hasilnaivebayes$prog)
+
+"akurasi naive bayes yaitu 52.5%"
+```
+
+==========================================================================================================================================================
+
+>> USING ALGORITMA KNN <<
+
+
+```{r tes classification gunakan KNN}
+str(hsbdemo)
+hsbdemo.num <- hsbdemo # buat dataset baru dimana semua variabel nantinya akan kita rubah ke numeric/integer agar compatible dengan KNN
+
+hsbdemo.num$female <- as.integer(hsbdemo.num$female)
+hsbdemo.num$ses <- as.integer(hsbdemo.num$ses)
+hsbdemo.num$schtyp <- as.integer(hsbdemo.num$schtyp)
+hsbdemo.num$prog <- as.integer(hsbdemo.num$prog)
+hsbdemo.num$honors <- as.integer(hsbdemo.num$honors)
+str(hsbdemo.num) #sudah integer semua
+
+#normalization
+norm <- function(x) {(x-min(x))/(max(x)-min(x))}
+normal <- lapply(hsbdemo.num, norm)
+normalized <- as.data.frame(normal)
+
+#create random sample untuk hsbdemo.num
+set.seed(69)
+sampling.num <- sample(1:nrow(hsbdemo.num),0.8*nrow(hsbdemo.num))
+training.num <- normalized[sampling.num,]
+test.num <- normalized[-sampling.num,]
+target <- hsbdemo.num[sampling.num,5]
+
+#tambahan buat coba2 confusion matrix hehe
+test <- hsbdemo[-sampling.num,]  
+
+
+library(class)
+predict.KNN <- knn(training.num,test.num,cl=target,k=13)  #no need unnormalisasi , CL = factor of true classifications of training set
+numtestpredict <- cbind(test.num,predict.KNN)
+
+numtestpredict$predict.KNN <- as.factor(numtestpredict$predict.KNN)  # harus dijadikan factor agar bisa di masukkan ke fungsi confusion matrix caret
+str(numtestpredict)
+
+numtestpredict$predict.KNN <- as.character(numtestpredict$predict.KNN)
+numtestpredict$predict.KNN[numtestpredict$predict.KNN == 3] <- "vocation"
+numtestpredict$predict.KNN[numtestpredict$predict.KNN == 2] <- "general"
+numtestpredict$predict.KNN[numtestpredict$predict.KNN == 1] <- "academic"
+
+str(numtestpredict)
+str(test)
+numtestpredict$predict.KNN <- as.factor(numtestpredict$predict.KNN)
+confusionMatrix(numtestpredict$predict.KNN, test$prog)  # supaya sama2 text, gak dalam bentuk nomor yang kotor
+
+"akurasi KNN yaitu 82.5%"
+```
+
+==========================================================================================================================================================
+
+>> USING ALGORITMA NEURAL NETWORK <<
+
+```{r tes classification gunakan neural network}
+hsbdemo3 <- hsbdemo
+
+#integerkan semua variabel 
+str(hsbdemo3)
+hsbdemo3$female <- as.integer(hsbdemo3$female)
+hsbdemo3$ses <- as.integer(hsbdemo3$ses)
+hsbdemo3$schtyp <- as.integer(hsbdemo3$schtyp)
+hsbdemo3$prog <- as.integer(hsbdemo3$prog)
+hsbdemo3$honors <- as.integer(hsbdemo3$honors)
+
+#normalisasi
+norm <- function(x) {(x-min(x))/(max(x)-min(x))}
+normal <- lapply(hsbdemo3,norm)
+normalized <- as.data.frame(normal)
+
+#sampling
+set.seed(21)
+sampling <- sample(1:nrow(normalized), 0.8*nrow(normalized))
+training <- normalized[sampling,]
+testing <- normalized[-sampling,]
+
+#create model
+library(neuralnet)
+model.nn <- neuralnet(prog~.-id, data = training, hidden = c(8,4),act.fct = "logistic", linear.output = FALSE, lifesign = "minimal")
+plot(model.nn)
+
+#prediction
+predict.nn <- predict(model.nn, testing)
+predict.nn.normal <- predict.nn*(max(hsbdemo3$prog)-min(hsbdemo3$prog))+min(hsbdemo3$prog) # dikembalikan ke nilai normal
+round.nn <- round(predict.nn.normal)
+
+predicted.NN <- as.data.frame(round.nn)
+colnames(predicted.NN)[1] <- "prediction"
+predicted.NN[predicted.NN == 3] <- "vocation"
+predicted.NN[predicted.NN == 2] <- "general"
+predicted.NN[predicted.NN == 1] <- "academic"
+
+library(caret)
+tester <- hsbdemo[-sampling,]
+
+str(predicted.NN)
+predicted.NN$prediction <- as.factor(predicted.NN$prediction)
+confusionMatrix(predicted.NN$prediction,tester$prog )
+
+"akurasi NeuralNetwork yaitu 55%"
+
+```
+
+==========================================================================================================================================================
+
+>> USING ALGORITMA SVM <<
+
+```{r tes classification gunakan SVM}
+str(hsbdemo)
+hsbdemo.num <- hsbdemo # buat dataset baru dimana semua variabel nantinya akan kita rubah ke numeric/integer agar compatible dengan KNN
+
+hsbdemo.num$female <- as.integer(hsbdemo.num$female)
+hsbdemo.num$ses <- as.integer(hsbdemo.num$ses)
+hsbdemo.num$schtyp <- as.integer(hsbdemo.num$schtyp)
+hsbdemo.num$honors <- as.integer(hsbdemo.num$honors)
+str(hsbdemo.num) #sudah integer semua
+
+#normalization
+norm <- function(x) {(x-min(x))/(max(x)-min(x))}
+normal <- lapply(hsbdemo.num[-c(5)], norm)
+normalized <- as.data.frame(normal)
+normalized  <- cbind(normalized, hsbdemo$prog)
+colnames(normalized)
+colnames(normalized)[13] <- "prog"
+
+#create random sample untuk hsbdemo.num
+set.seed(69)
+sampling.num <- sample(1:nrow(hsbdemo.num),0.8*nrow(hsbdemo.num))
+training.num <- normalized[sampling.num,]
+test.num <- normalized[-sampling.num,]
+
+
+library(e1071)
+model.svm <- svm(prog~.-id, data = training.num, type = "nu-classification", kernel= "linear")
+predict.svm <- predict(model.svm,test.num)
+
+
+svmfit <- cbind(test.num,predict.svm)
+confusionMatrix(svmfit$prog,svmfit$predict.svm)
+
+"akurasi svm yaitu 62.5%"  # bisa juga tanpa normalisasi sebenarnya
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,175 @@
+---
+title: "My Simulation 4 (27 Agustus 2020)"
+author: "Chemy"
+date: "8/27/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+ccr <- read.csv("~/breast-cancer.data", header=FALSE)
+head(ccr)
+colnames(ccr)<- c("classifier", "age", "menopause", "tumor-size", "inv-nodes", "node-caps", "deg-malig", "breast", "breast-quad", "irradiat")
+str(ccr)
+ccr$`deg-malig` <- as.factor(ccr$`deg-malig`)
+ccr$`deg-malig` <- as.integer(ccr$`deg-malig`)
+
+#split data
+set.seed(69)
+sample <- sample(nrow(ccr), 0.8*nrow(ccr))
+train <- ccr[sample,]
+test <- ccr[-sample,]
+
+```
+
+```{r}
+library(nnet)
+multinomku <- multinom(classifier~., train)
+hasil1 <- predict(multinomku, test)
+
+library(caret)
+confusionMatrix(prediction, test$class)
+```
+
+```{r}
+library(rpart)
+library(rpart.plot)
+ls("package:rpart")
+classtreeku <- rpart(classifier~., train, method = "class")
+plotcp(classtreeku)
+pruneku <- prune(classtreeku, cp = 0.037)
+rpart.plot(pruneku)
+
+hasil2 <- predict(pruneku, test, type = "class")
+
+library(caret)
+confusionMatrix(hasil2, test$classifier)
+
+```
+
+```{r}
+library(randomForest)                    # nama kolom tidak boleh aneh2, pakai titik saja
+ls("package:randomForest")
+colnames(train)
+
+colnames(train)[4]<- "tumor.size"
+colnames(train)[5]<- "inv.nodes"
+colnames(train)[6]<- "node.caps"
+colnames(train)[7]<- "deg.malig"
+colnames(train)[9]<- "breast.quad"
+
+colnames(test)[4]<- "tumor.size"
+colnames(test)[5]<- "inv.nodes"
+colnames(test)[6]<- "node.caps"
+colnames(test)[7]<- "deg.malig"
+colnames(test)[9]<- "breast.quad"
+
+ranforku <- randomForest(classifier~.,data = train, ntree= 500, mtry=10, proximity = TRUE)
+hasil3 <- predict(ranforku, test)
+
+library(caret)
+confusionMatrix(hasil3, test$classifier)
+
+```
+
+
+```{r}
+library(e1071)
+ls('package:e1071')
+navbayesku <- naiveBayes(classifier~., train, laplace = 30)
+navbayesku
+
+hasil4 <- predict(navbayesku, test)
+
+library(caret)
+confusionMatrix(hasil4, test$classifier)
+
+```
+
+```{r}
+library(e1071)
+ls('package:e1071')
+navbayesku <- naiveBayes(classifier~., train, laplace = 30)
+navbayesku
+
+hasil4 <- predict(navbayesku, test)
+
+library(caret)
+confusionMatrix(hasil4, test$classifier)
+
+```
+
+```{r}
+library(e1071)
+ls('package:e1071')
+svmku <- svm(classifier~., train, type ="C-classification", kernel = "radial")
+svmku
+
+hasil5 <- predict(svmku, test)
+
+library(caret)
+confusionMatrix(hasil5, test$classifier)
+
+```
+
+```{r}
+str(num)
+num <- ccr
+colnames(num)
+
+library(hablar)
+library(dplyr)
+ls("package:dplyr")
+
+num <- num %>% mutate_all(as.numeric) #rubah semua jadi numeric
+
+norm <- function(x) {(x-min(x))/ (max(x)-min(x))}
+normal <- lapply(num,norm)
+normalized <- as.data.frame(normal)
+
+
+set.seed(999)
+sample <- sample(nrow(num), 0.8* nrow(num))
+train <- normalized[sample,]
+test <- normalized[-sample,]
+target1 <- normalized[sample,1] 
+
+tester <- normalized[-sample,1] #untuk confusion matrix
+ccrot <- ccr[-sample,]
+
+library(class)
+knn <- knn(train, test, cl = target1, k=10)
+
+
+#### versi confusion matrix number
+tester <- as.factor(tester)
+confusionMatrix(tester, knn)
+
+
+#### versi confusionmatrix TEXT
+summary(ccr)
+
+knn <- as.numeric(knn)
+knn[knn == 1] <- "no-recurrence-events"
+knn[knn == 2] <- "recurrence-events"
+knn <- as.factor(knn)
+
+confusionMatrix(knn, ccrot$classifier)
+
+```
+
+```{r}
+library(neuralnet)
+nnku <- neuralnet(classifier~., train, linear.output = FALSE, hidden = c(5,2), rep = 10 )
+plot(nnku)
+hasil6 <- predict(nnku, test)
+
+hasil6fix <- hasil6* (max(num$classifier) - min(num$classifier)) + min(num$classifier)
+hasil6fix <- round(hasil6fix)
+
+hasil6fix <- as.factor(hasil6fix)
+
+levels(hasil6fix) <- list("0" = "1", "1" = "2")
+confusionMatrix(hasil6fix, tester)
+
+```
