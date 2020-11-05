@@ -1,0 +1,235 @@
+---
+title: "testDSA2019"
+author: "Chemy"
+date: "11/3/2020"
+output: html_document
+---
+1.	Download dataset DSA, karena bentuk .txt maka tidak bisa dibuka di excel
+2.	Caranya, open with file pakai Notepad, lalu Save As , setting ke All files lalu tambahkan .csv di nama file
+3.	Setelah itu file .csv dapat dibuka di excel, gunakan text to column untuk delimiter handling
+4.	Rapihkan data sebisa mungkin di excel (yang kelihatan) pakai copy paste atau tools excel lainnya
+5.	Pindah ke R untuk cek data lebih lanjut
+
+DATA ACQUISITION :
+
+```{r}
+library(readr)
+dsa <- read_csv("C:/Users/user/Desktop/Belajar/Technical Test DSA/datasetDSA2019.csv")
+View(dsa)
+
+#pastikan tidak ada data yang aneh/masih berantakan
+library(DataExplorer)
+summary(dsa$region)
+plot_bar(dsa) #plot discrete data
+plot_histogram(dsa) #plot continous data
+```
+
+Sebelum lanjut ke proses yang lainnya, terlebih dahulu kita rapihkan type dari setiap variabel agar sesuai dengan yang seharusnya (categorical/numerical) :
+
+```{r}
+#rapihkan struktur data
+str(dsa)
+dsa$region <- as.factor(dsa$region)
+dsa$flag_taker <- as.factor(dsa$flag_taker)
+dsa$interest_categorys <- as.factor(dsa$interest_categorys)
+dsa$mytsel_app_user <- as.factor(dsa$mytsel_app_user)
+
+library(DataExplorer)
+summary(dsa)
+plot_bar(dsa)
+
+dsa <- dsa %>% select(-total_recharge_URP)
+
+create_report(dsa)
+plot_intro(dsa) #precentage
+plot_str(dsa)  #struktur
+plot_missing(dsa) #show NA stats
+```
+
+!!! masukkan gambar plot_str(dsa) / screenshot dari hasil create_report(dsa) bagian "Data Structure", plot_str(dsa)
+
+```{r}
+#rubah null dan ? menjadi NA
+library(dplyr)
+dsa <- dsa %>% mutate_all(na_if,"")
+dsa <- dsa %>% mutate_all(na_if,"?")
+```
+
+!!! masukkan gambar screenshot dari hasil create_report(dsa) bagian "Basic Statistics" dan "Percentages" , plot_intro(dsa)
+
+```{r}
+#cek apakah ada NA/null/?
+anyNA(dsa) #tidak ditemukana ada NA
+
+
+dsa %>% mutate_all(as.numeric) %>% mutate_all(is.na) %>% summarize_all(sum)
+#apabila ditemukan NA dapat dilakukan 2 opsi : omit dan impute(missforest)
+```
+
+!!! masukkan gambar screenshot dari hasil create_report(dsa) bagian "Missing Data Profile" , plot_missing(dsa)
+
+===============================================================================================================================================
+
+untuk efisiensi waktu pengerjaan maka akan digunakan na.roughfix
+
+```{r}
+dsaNA <- read_csv("C:/Users/user/Desktop/Belajar/Technical Test DSA/datasetDSA2019withNA.csv")
+dsaNA$region <- as.factor(dsaNA$region)
+dsaNA$flag_taker <- as.factor(dsaNA$flag_taker)
+dsaNA$interest_categorys <- as.factor(dsaNA$interest_categorys)
+dsaNA$mytsel_app_user <- as.factor(dsaNA$mytsel_app_user)
+
+dsaNA <- dsaNA %>% mutate_all(na_if,"")
+dsaNA <- dsaNA %>% mutate_all(na_if,"?")
+dsaNA %>% mutate_all(as.numeric) %>% mutate_all(is.na) %>% summarize_all(sum)
+
+str(dsaNA)
+library(randomForest)
+dsaNA2 <- na.roughfix(dsaNA %>% select(-MSISDN)) #kolom character harus di exclude, hanya bisa numeric dan factor
+
+MSISDN <- dsaNA %>% select(MSISDN)
+dsaNAfixed <- cbind(MSISDN,dsaNA2) 
+
+library(missForest)
+dsaNAnoMSISDN <- dsaNA %>% select(-MSISDN)
+dsaNAnoMSISDN <- as.data.frame(dsaNAnoMSISDN) # entah kenapa ini harus diterapkan, ada issue saat import file 
+dsaNA3 <- missForest(dsaNAnoMSISDN ,ntree = 500, maxiter = 10, mtry = 3)
+```
+
+===============================================================================================================================================
+
+Dengan melakukan EDA kita bisa mengambil insights dari data yang diberikan yang dapat digunakan untuk asses assumptions, mencari key feature dari data,cause of observed event, dan lainnya. EDA dapat dilakukan baik dengan graphical techniques maupun quantitative techniques. Beberapa contoh insight yang dapat digali antara lain :
+
+!!! triknya, fokus ke data discreate / categorical
+
+```{r}
+plot_bar(dsa, nrow =1, ncol=1)
+plot_bar(dsa, with = "revenue", nrow = 1, ncol = 1)  #compare dengan revenue, apabila pengen gambar lebih jelas kecilin nrow ncol
+#plot_bar(dsa$interest_categorys)
+dsafinal <- dsa %>% select(-total_recharge_URP)
+```
+
+1.interest category 1 (video) menyumbang revenue terbesar, meskipun secara frequency tidak paling tinggi (rank 5)
+2.myTselApp user menyumbang revenue lebih besar dibanding non-user, meskipun secara frequency non-user lebih banyak (hampir 2xlipat user)
+
+```{r}
+plot_histogram(dsa)
+#plot_density(dsa)
+#plot_histogram(dsa$rev_sms_pack_mytsel)
+
+#plot_boxplot(dsa, by="payload")
+plot_scatterplot(dsa, by = "revenue")
+
+```
+
+
+```{r cek korelasi antar variable}
+source("http://www.sthda.com/upload/rquery_cormat.r")
+library(dplyr)
+
+dsacorr <- dsafinal %>% select(-MSISDN) %>% mutate_all(as.numeric) 
+rquery.cormat(dsacorr)
+
+```
+
+4. variabel rev_data, rev_data_pack, revenue dan total_recharge memiliki korelasi yang tinggi 
+5. variabel (trx_sms,trx_sms_offnet) , (trx_voice,trx_voice_onnet), (mou_voice, mou voiceonnet)  memiliki korelasi tinggi
+   kedepannya tergantung dari DS apakah variabel yang berkorelasi mau di exclude atau tidak. Untuk case kali ini tidak saya exclude
+
+
+======================================================= CLASSIFICATION CASE ===================================================================
+
+Untuk case ini kita akan menggunakan Holdout-crossvalidation, dimana data di split menjadi train-test :
+
+```{r}
+set.seed(69)
+sample <- sample(nrow(dsafinal), 0.8*nrow(dsafinal))
+train <- dsafinal[sample,]
+test <- dsafinal[-sample,]
+train
+```
+
+
+```{r metode GLM}
+model1 <- glm(flag_taker~., data = train[-c(1)], family = binomial)
+
+test2 <- test %>% filter(flag_taker == "0")
+test3 <- dsafinal %>% filter(flag_taker == 0)
+
+predictionx <- predict(model1, test, type = "response")
+
+#gambar grafik ROC nya
+library(ROCR)
+ROCRpred <- prediction(predictionx, test$flag_taker)
+ROCRperf <- performance(ROCRpred, "tpr", "fpr")
+plot(ROCRperf, colorize=TRUE, print.cutoffs.at=seq(0,1,by=0.1), text.adj=c(-0.2,1.7))
+```
+untuk cutoff ideal berdasarkan grafik terdapat di 0.4, maka:
+!!! coba aja masing2 cutoff lalu cari akurasi terbaik
+
+```{r}
+#prediction1 <- ifelse(predictionx > 0.5, "1", "0")
+prediction2 <- ifelse(predictionx > 0.4, "1", "0")
+
+#mean(prediction1 == test$flag_taker)
+mean(prediction2 == test$flag_taker)
+
+```
+
+UNTUK MENCARI SIGNIFIKAN VARIABLE YANG MEMPENGARUHI MODEL :
+
+```{r}
+summary(model1)
+
+#A significance level of 0.05 indicates a 5% risk of concluding that an association exists when there is no actual association. If the p-value is less than or equal to the significance level, you can conclude that there is a statistically significant association between the response variable and the term.
+```
+
+TES GUNAKAN METHOD LAIN UNTUK DI COMPARE :
+
+```{r metode Multinom}
+library(nnet) #karena metode menggunakan weight dan size agak overwhelmed apabila MSISDN tetap ada
+library(dplyr)
+model0 <- multinom(flag_taker~., data = train %>% select(-MSISDN))
+prediction0 <- predict(model0, test)
+
+table(prediction0, test$flag_taker)
+mean(prediction0 == test$flag_taker)
+
+```
+
+
+```{r metode random forest}
+train2 <- train
+test2 <- test
+train2$flag_taker <- as.factor(train2$flag_taker)
+test2$flag_taker <- as.factor(test2$flag_taker)
+
+library(randomForest)
+model2 <- randomForest(flag_taker~., data = train2[-c(1)], ntree = 500, mtry = 3, importance = TRUE, proximity = TRUE)
+
+```
+
+
+```{r metode SVM}
+library(e1071)
+model3 <- svm(flag_taker~., data = train %>% select(-MSISDN, -total_recharge_URP))
+predict3 <- predict(model3, test)
+predict3 <- ifelse(predict3 > 0, 1, 0)
+
+mean(predict3 == test$flag_taker)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+

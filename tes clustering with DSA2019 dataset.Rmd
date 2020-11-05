@@ -1,0 +1,100 @@
+---
+title: "My Simulation 7 (8 Oktober 2020)"
+author: "Chemy"
+date: "10/8/2020"
+output: html_document
+---
+
+```{r }
+library(readr)
+dataset <- read_csv("dataset.csv")
+
+#hapus unused kolom ke-30
+str(dataset)
+colnames(dataset)
+dataset <- dataset[-c(30)]
+dataset$flag_taker <- as.factor(dataset$flag_taker)
+
+#colnames(dataset)
+#summary(dataset)
+```
+
+```{r jawaban nomor 3}
+anyNA(dataset)
+
+library(dplyr)
+dataset3 <- dataset %>% select(rev_voice, rev_data, rev_sms)
+
+km <- kmeans(dataset3, centers = 5, nstart = 25)
+print(km)
+#rubah nama cluster based on means
+km$cluster[km$cluster == 1] <- "sad"
+km$cluster[km$cluster == 2] <- "orang misqueen"
+km$cluster[km$cluster == 3] <- "UMR"
+km$cluster[km$cluster == 4] <- "horang kaya"
+km$cluster[km$cluster == 5] <- "billgates"
+#plot
+library(factoextra)
+library(ggplot2)
+fviz_cluster(km, geom = "point", data=dataset3, ellipse = FALSE ) + ggtitle("k=5")
+
+#decide optimal jumlah cluster
+m1 <- fviz_nbclust(dataset3, kmeans, method = "wss") + ggtitle("metode elbow")
+m2 <- fviz_nbclust(dataset3, kmeans, method = "silhouette") + ggtitle("metode silhoutte") #ditandain
+m3 <- "metode gap_stat tidak memungkinkan karena too many iteration needed dan overlapping observation"
+
+#comparet 2 method
+library(gridExtra)
+grid.arrange(m1,m2, nrow =2)
+
+#create new cluster berdasarkan nbclust
+km2 <- kmeans(dataset3, centers = 6, nstart = 25)
+print(km)
+
+fviz_cluster(km, geom = "point", data=dataset3, ellipse = FALSE ) + ggtitle("k=5")
+```
+
+
+```{r metode kmeans untuk iris}
+anyNA(iris) #tidak boleh ada NA dan tidak boleh ada text/character
+
+irisq <- iris %>% select(-Species)
+
+library(factoextra)
+library(ggplot2)
+
+set.seed(123)
+i1 <- fviz_nbclust(irisq, kmeans, method = "wss") + ggtitle("metode elbow") ## cari dimana penambahan cluster sudah gak signifikan perubahannya
+i2 <- fviz_nbclust(irisq, kmeans, method = "silhouette") + ggtitle("metode silhoutte") #ditandain
+i3 <- fviz_nbclust(irisq, kmeans, nstart = 25,  method = "gap_stat", nboot = 50) + ggtitle("metode gap_stat") #ditandain
+library(gridExtra)
+grid.arrange(i1,i2,i3 , nrow =2)
+
+irismeans <- kameans(irisq, centers = 3, nstart = 25)
+print(irismeans)
+
+table(iris$Species, irismeans$cluster)
+irismeans$cluster[irismeans$cluster == 1] <- "versicolor"
+irismeans$cluster[irismeans$cluster == 2] <- "setosa"
+irismeans$cluster[irismeans$cluster == 3] <- "virginica"
+
+fviz_cluster(irismeans, geom = "point", data=irisq, ellipse = FALSE, repel = TRUE) + ggtitle("k=3")
+mean(iris$Species == irismeans$cluster) #cek akurasi
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
